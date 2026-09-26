@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Supabase Projects Dashboard</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --card: #1a1d24;
+    --border: #2a2e37;
+    --text: #e6e8ec;
+    --muted: #8b909c;
+    --accent: #5b8cff;
+    --up: #33c17a;
+    --degraded: #e6b800;
+    --down: #e6544a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 24px;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
+  .toolbar { display: flex; gap: 8px; margin-bottom: 20px; }
+  button {
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 14px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  button.secondary { background: var(--card); border: 1px solid var(--border); color: var(--text); }
+  button.danger { background: var(--down); }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 14px;
+  }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+  }
+  .card-head { display: flex; justify-content: space-between; align-items: start; gap: 8px; }
+  .name { font-weight: 600; font-size: 15px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 6px; }
+  .dot.up { background: var(--up); }
+  .dot.degraded { background: var(--degraded); }
+  .dot.down { background: var(--down); }
+  .dot.unknown { background: var(--muted); }
+  .status-line { font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .ports { font-size: 12px; color: var(--muted); margin-top: 10px; line-height: 1.6; }
+  .actions { margin-top: 14px; display: flex; gap: 8px; }
+  .actions a, .actions button { font-size: 12px; padding: 6px 10px; }
+  a.link { color: var(--accent); text-decoration: none; }
+  .notes { font-size: 12px; color: var(--muted); margin-top: 8px; white-space: pre-wrap; }
+
+  dialog {
+    background: var(--card);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+    width: min(420px, 90vw);
+  }
+  dialog::backdrop { background: rgba(0,0,0,0.5); }
+  label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 4px; }
+  input, textarea {
+    width: 100%;
+    background: #11141a;
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 6px;
+    padding: 8px;
+    font-size: 13px;
+    font-family: inherit;
+  }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+  .empty { color: var(--muted); font-size: 13px; }
+</style>
+</head>
+<body>
+
+<h1>Supabase Projects</h1>
+<div class="sub">Self-hosted stacks on <code>assistant_vps_3</code> — click a card to open its Studio.</div>
+
+<div class="toolbar">
+  <button id="addBtn">+ Add project</button>
+  <button class="secondary" id="refreshBtn">Refresh status</button>
+</div>
+
+<div id="grid" class="grid"></div>
+<p id="emptyMsg" class="empty" style="display:none">No projects yet — click "Add project" to register your first Supabase stack.</p>
+
+<dialog id="formDialog">
+  <form id="projectForm" method="dialog">
+    <h2 id="formTitle" style="margin:0 0 4px;font-size:16px;">Add project</h2>
+    <input type="hidden" id="f_id" />
+
+    <label>Name</label>
+    <input id="f_name" required placeholder="e.g. BMW club 77" />
+
+    <label>Studio URL</label>
+    <input id="f_studio_url" required placeholder="http://77.222.47.140:8000" />
+
+    <label>Compose project name</label>
+    <input id="f_compose" placeholder="e.g. avtostroy (blank for Stack 1)" />
+
+    <div class="row2">
+      <div>
+        <label>Studio/Envoy port</label>
+        <input id="f_port_studio" type="number" placeholder="8000" />
+      </div>
+      <div>
+        <label>Postgres port</label>
+        <input id="f_port_postgres" type="number" placeholder="5432" />
+      </div>
+    </div>
+    <div class="row2">
+      <div>
+        <label>Transaction pooler port</label>
+        <input id="f_port_pooler" type="number" placeholder="6543" />
+      </div>
+      <div>
+        <label>Kong HTTPS port</label>
+        <input id="f_port_kong" type="number" placeholder="8443" />
+      </div>
+    </div>
+
+    <label>Notes</label>
+    <textarea id="f_notes" rows="3" placeholder="Used by... tenancy model... anything worth remembering"></textarea>
+
+    <div class="dialog-actions">
+      <button type="button" class="secondary" id="cancelBtn">Cancel</button>
+      <button type="submit" id="saveBtn">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+const grid = document.getElementById('grid');
+const emptyMsg = document.getElementById('emptyMsg');
+const formDialog = document.getElementById('formDialog');
+const projectForm = document.getElementById('projectForm');
+const formTitle = document.getElementById('formTitle');
+
+let projects = [];
+let health = {}; // id -> {status, detail}
+
+function fmtPorts(p) {
+  const parts = [];
+  if (p.port_studio) parts.push(`Studio/Envoy ${p.port_studio}`);
+  if (p.port_postgres) parts.push(`Postgres ${p.port_postgres}`);
+  if (p.port_pooler) parts.push(`Pooler ${p.port_pooler}`);
+  if (p.port_kong_https) parts.push(`Kong HTTPS ${p.port_kong_https}`);
+  return parts.join(' · ');
+}
+
+function render() {
+  grid.innerHTML = '';
+  emptyMsg.style.display = projects.length ? 'none' : 'block';
+  for (const p of projects) {
+    const h = health[p.id] || { status: 'unknown', detail: 'checking...' };
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `
+      <div class="card-head">
+        <div>
+          <div class="name"><span class="dot ${h.status}"></span>${escapeHtml(p.name)}</div>
+          <div class="status-line">${escapeHtml(h.detail || h.status)}</div>
+        </div>
+      </div>
+      ${p.compose_project_name ? `<div class="status-line">stack: ${escapeHtml(p.compose_project_name)}</div>` : ''}
+      <div class="ports">${fmtPorts(p)}</div>
+      ${p.notes ? `<div class="notes">${escapeHtml(p.notes)}</div>` : ''}
+      <div class="actions">
+        <a class="link" href="${escapeAttr(p.studio_url)}" target="_blank"><button type="button">Open Studio</button></a>
+        <button type="button" class="secondary" data-edit="${p.id}">Edit</button>
+        <button type="button" class="danger" data-del="${p.id}">Delete</button>
+      </div>
+    `;
+    grid.appendChild(card);
+  }
+}
+
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function escapeAttr(s) { return escapeHtml(s); }
+
+async function loadProjects() {
+  const res = await fetch('/api/projects');
+  projects = await res.json();
+  render();
+  loadHealth(false);
+}
+
+async function loadHealth(force) {
+  const res = await fetch('/api/health' + (force ? '?force=1' : ''));
+  const results = await res.json();
+  health = {};
+  for (const r of results) health[r.id] = r;
+  render();
+}
+
+document.getElementById('refreshBtn').addEventListener('click', () => loadHealth(true));
+
+document.getElementById('addBtn').addEventListener('click', () => {
+  formTitle.textContent = 'Add project';
+  projectForm.reset();
+  document.getElementById('f_id').value = '';
+  formDialog.showModal();
+});
+
+document.getElementById('cancelBtn').addEventListener('click', () => formDialog.close());
+
+grid.addEventListener('click', async (e) => {
+  const editId = e.target.getAttribute?.('data-edit');
+  const delId = e.target.getAttribute?.('data-del');
+  if (editId) {
+    const p = projects.find(x => String(x.id) === editId);
+    if (!p) return;
+    formTitle.textContent = 'Edit project';
+    document.getElementById('f_id').value = p.id;
+    document.getElementById('f_name').value = p.name || '';
+    document.getElementById('f_studio_url').value = p.studio_url || '';
+    document.getElementById('f_compose').value = p.compose_project_name || '';
+    document.getElementById('f_port_studio').value = p.port_studio || '';
+    document.getElementById('f_port_postgres').value = p.port_postgres || '';
+    document.getElementById('f_port_pooler').value = p.port_pooler || '';
+    document.getElementById('f_port_kong').value = p.port_kong_https || '';
+    document.getElementById('f_notes').value = p.notes || '';
+    formDialog.showModal();
+  } else if (delId) {
+    if (!confirm('Delete this project entry? (This only removes it from the dashboard, not the actual Supabase stack.)')) return;
+    await fetch(`/api/projects/${delId}`, { method: 'DELETE' });
+    await loadProjects();
+  }
+});
+
+projectForm.addEventListener('submit', async () => {
+  const id = document.getElementById('f_id').value;
+  const body = {
+    name: document.getElementById('f_name').value.trim(),
+    studio_url: document.getElementById('f_studio_url').value.trim(),
+    compose_project_name: document.getElementById('f_compose').value.trim(),
+    port_studio: Number(document.getElementById('f_port_studio').value) || null,
+    port_postgres: Number(document.getElementById('f_port_postgres').value) || null,
+    port_pooler: Number(document.getElementById('f_port_pooler').value) || null,
+    port_kong_https: Number(document.getElementById('f_port_kong').value) || null,
+    notes: document.getElementById('f_notes').value.trim(),
+  };
+  if (id) {
+    await fetch(`/api/projects/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  } else {
+    await fetch('/api/projects', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  }
+  formDialog.close();
+  await loadProjects();
+});
+
+loadProjects();
+setInterval(() => loadHealth(false), 60000);
+</script>
+</body>
+</html>

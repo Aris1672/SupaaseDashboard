@@ -1,0 +1,15 @@
+{
+  "name": "projects-dashboard",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Internal dashboard to manage self-hosted Supabase project stacks",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "express-basic-auth": "^1.2.1",
+    "pg": "^8.11.5"
+  }
+}
